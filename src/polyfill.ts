@@ -1,47 +1,29 @@
-import { AppHistory } from "./appHistory";
+import { Navigation } from './navigation'
 
-type UseBrowserPolyfillOptions = {
-  configurable?: boolean;
-};
-export function useBrowserPolyfill(options?: UseBrowserPolyfillOptions) {
-  if ("appHistory" in window) {
-    return;
-  }
+Object.defineProperty(window, 'navigation', {
+	value: new Navigation,
+	enumerable: true,
+	configurable: false,
+})
+  
+window.addEventListener('click', windowClickHandler)
+window.addEventListener('popstate', () => 
+	window.navigation.navigate(location.pathname)
+)
 
-  Object.defineProperty(window, "appHistory", {
-    value: new AppHistory(),
-    enumerable: true,
-    configurable: options?.configurable ?? false,
-  });
+function windowClickHandler (event) {
+	const anchor = event.composedPath().find(({ tagName }) => tagName === 'A')
 
-  window.addEventListener("click", windowClickHandler);
-}
+	if (!anchor?.href 
+        || new URL(anchor.href).hash
+        || anchor.target 
+        || anchor.hasAttribute('download') 
+        || anchor.getAttribute('rel') === 'external') return
 
-function windowClickHandler(evt: Event): void {
-  if (evt.target && evt.target instanceof HTMLElement) {
-    // on anchor/area clicks, fire 'appHistory.navigate()'
-    const linkTag =
-      evt.target.nodeName === "A" || evt.target.nodeName === "AREA"
-        ? (evt.target as HTMLAreaElement | HTMLAnchorElement)
-        : evt.target.closest("a") ?? evt.target.closest("area");
-    if (linkTag) {
-      evt.preventDefault();
-      window.appHistory
-        .navigate({
-          url: linkTag.href,
-          navigateInfo: { type: `${linkTag.nodeName.toLowerCase()}-click` },
-        })
-        .catch((err) => {
-          setTimeout(() => {
-            throw err;
-          });
-        });
-    }
-  }
-}
-
-declare global {
-  interface Window {
-    appHistory: AppHistory;
-  }
+	event.preventDefault()
+	window.navigation.navigate(anchor.href, {
+		info: { 
+			type: `${anchor.nodeName.toLowerCase()}-click` 
+		}
+	})
 }

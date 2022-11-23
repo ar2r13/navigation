@@ -1,6 +1,6 @@
-import { fakeRandomId } from "./helpers";
+const fakeRandomId = () => Math.random().toString(36).substr(2, 10)
 
-export class AppHistory {
+export class Navigation {
   constructor() {
     this.current = new AppHistoryEntry({ url: window.location.href });
     this.current.__updateEntry(undefined, 0);
@@ -51,6 +51,10 @@ export class AppHistory {
     return options;
   }
 
+  reload(options?: { state: unknown }) {
+    return this.navigate(this.current.url, options);
+  }
+
   navigate(fullOptions?: AppHistoryPushOrUpdateFullOptions): Promise<undefined>;
   navigate(
     url?: string,
@@ -89,13 +93,13 @@ export class AppHistory {
         (entry) => entry.key === previousEntry.key
       );
 
-      const upcomingURL = new URL(
-        upcomingEntry.url,
-        window.location.origin + window.location.pathname
-      );
+      const upcomingURL = new URL(upcomingEntry.url)
+
+      console.log({ upcomingEntry })
 
       if (upcomingURL.origin === window.location.origin) {
         if (options?.replace) {
+          console.log('replace')
           window.history.replaceState(options?.state, "", upcomingEntry.url);
         } else {
           window.history.pushState(options?.state, "", upcomingEntry.url);
@@ -207,7 +211,7 @@ export class AppHistory {
 
   private onEventListeners: Record<
     keyof AppHistoryEventListeners,
-    AppHistoryNavigateEventListener | null
+    NavigateEventListener | null
   > = {
     navigate: null,
     currentchange: null,
@@ -215,7 +219,7 @@ export class AppHistory {
     navigateerror: null,
   };
 
-  set onnavigate(callback: AppHistoryNavigateEventListener) {
+  set onnavigate(callback: NavigateEventListener) {
     this.addOnEventListener("navigate", callback);
   }
 
@@ -233,7 +237,7 @@ export class AppHistory {
 
   private addOnEventListener(
     eventName: keyof AppHistoryEventListeners,
-    callback: AppHistoryNavigateEventListener | EventListener | null
+    callback: NavigateEventListener | EventListener | null
   ) {
     if (this.onEventListeners[eventName]) {
       if (eventName === "navigate") {
@@ -256,7 +260,7 @@ export class AppHistory {
 
   addEventListener(
     eventName: keyof AppHistoryEventListeners,
-    callback: AppHistoryNavigateEventListener | EventListener
+    callback: NavigateEventListener | EventListener
   ): void {
     if (
       eventName === "navigate" ||
@@ -264,7 +268,7 @@ export class AppHistory {
       eventName === "navigatesuccess" ||
       eventName === "navigateerror"
     ) {
-      if (isAppHistoryNavigateEventListener(eventName, callback)) {
+      if (isNavigateEventListener(eventName, callback)) {
         // TS complains if I don't check the type of the callback here
         if (!this.eventListeners.navigate.includes(callback)) {
           this.eventListeners.navigate.push(callback);
@@ -406,9 +410,9 @@ export class AppHistory {
       window.location.origin + window.location.pathname
     );
 
-    const canTransition = upcomingURL.origin === window.location.origin;
+    const canIntercept = upcomingURL.origin === window.location.origin;
 
-    const navigateEvent = new AppHistoryNavigateEvent({
+    const navigateEvent = new NavigateEvent({
       cancelable: true,
       userInitiated: true,
       hashChange:
@@ -416,14 +420,14 @@ export class AppHistory {
         upcomingURL.hash !== window.location.hash,
       destination: destinationEntry,
       info,
-      canTransition,
+      canIntercept,
       transitionWhile: (transitionWhilePromise: Promise<undefined>): void => {
-        if (canTransition) {
+        if (canIntercept) {
           destinationEntry.sameDocument = true;
           transitionWhileResponses.push(transitionWhilePromise);
         } else {
           throw new DOMException(
-            "Cannot call AppHistoryNavigateEvent.transitionWhile() if AppHistoryNavigateEvent.canTransition is false",
+            "Cannot call NavigateEvent.transitionWhile() if NavigateEvent.canIntercept is false",
             "SecurityError"
           );
         }
@@ -507,12 +511,13 @@ class AppHistoryEntry {
 
     const upcomingUrl =
       options?.url ?? previousEntry?.url ?? window.location.pathname;
-    this.url = upcomingUrl;
-
+      
     const upcomingUrlObj = new URL(
       upcomingUrl,
       window.location.origin + window.location.pathname
     );
+      
+    this.url = upcomingUrlObj;
     this.sameDocument =
       upcomingUrlObj.origin === window.location.origin &&
       upcomingUrlObj.pathname === window.location.pathname;
@@ -520,11 +525,11 @@ class AppHistoryEntry {
 
   key: AppHistoryEntryKeyOrId;
   id: AppHistoryEntryKeyOrId;
-  url: string;
+  url: URL;
   sameDocument: boolean;
   index: number;
   private _state: unknown;
-  private latestNavigateEvent?: AppHistoryNavigateEvent;
+  private latestNavigateEvent?: NavigateEvent;
 
   private eventListeners: AppHistoryEntryEventListeners = {
     navigateto: [],
@@ -559,7 +564,7 @@ class AppHistoryEntry {
       this._state = options.state;
     }
     if (options?.url) {
-      this.url = options.url;
+      this.url = new URL(options.url, location.origin)
     }
 
     if (typeof newIndex === "number") {
@@ -589,7 +594,7 @@ class AppHistoryEntry {
   }
 
   /** DO NOT USE; for internal purposes only */
-  __associateNavigateEvent(event: AppHistoryNavigateEvent): void {
+  __associateNavigateEvent(event: NavigateEvent): void {
     this.latestNavigateEvent = event;
   }
 
@@ -604,10 +609,10 @@ class AppHistoryEntry {
   }
 }
 
-type AppHistoryNavigateEventListener = (event: AppHistoryNavigateEvent) => void;
+type NavigateEventListener = (event: NavigateEvent) => void;
 
 type AppHistoryEventListeners = {
-  navigate: Array<AppHistoryNavigateEventListener>;
+  navigate: Array<NavigateEventListener>;
   currentchange: Array<EventListener>;
   navigatesuccess: Array<EventListener>;
   navigateerror: Array<EventListener>;
@@ -637,23 +642,23 @@ interface AppHistoryPushOrUpdateFullOptions extends AppHistoryNavigateOptions {
   url?: string;
 }
 
-interface AppHistoryNavigateEventOptions extends EventInit {
+interface NavigateEventOptions extends EventInit {
   userInitiated: boolean;
   hashChange: boolean;
   destination: AppHistoryEntry;
   formData?: null;
   info: unknown;
-  canTransition: boolean;
+  canIntercept: boolean;
   transitionWhile: (transitionWhilePromise: Promise<undefined>) => void;
 }
-class AppHistoryNavigateEvent extends Event {
-  constructor(eventInit: AppHistoryNavigateEventOptions) {
-    super("AppHistoryNavigateEvent", eventInit);
+class NavigateEvent extends Event {
+  constructor(eventInit: NavigateEventOptions) {
+    super("NavigateEvent", eventInit);
     this.userInitiated = eventInit.userInitiated ?? false;
     this.hashChange = eventInit.hashChange ?? false;
     this.destination = eventInit.destination;
     this.formData = eventInit.formData;
-    this.canTransition = eventInit.canTransition;
+    this.canIntercept = eventInit.canIntercept;
     this.transitionWhile = eventInit.transitionWhile;
     this.info = eventInit.info;
     this.abortController = new AbortController();
@@ -664,10 +669,14 @@ class AppHistoryNavigateEvent extends Event {
   readonly destination: AppHistoryEntry;
   readonly formData?: null;
   readonly info: unknown;
-  readonly canTransition: boolean;
-  transitionWhile: (transitionWhilePromise: Promise<undefined>) => void;
+  readonly canIntercept: boolean;
+  transitionWhile: (transitionWhilePromise: Promise<void>) => void;
   readonly signal: AbortSignal;
   private abortController: AbortController;
+
+  public async intercept ({ handler = Promise.resolve }) {
+    return this.transitionWhile(handler())
+  }
 
   /** DO NOT USE; for internal purposes only */
   __abort(): void {
@@ -738,9 +747,9 @@ class AppHistoryTransition {
   }
 }
 
-function isAppHistoryNavigateEventListener(
+function isNavigateEventListener(
   eventName: keyof AppHistoryEventListeners,
-  listener: AppHistoryNavigateEventListener | EventListener
-): listener is AppHistoryNavigateEventListener {
+  listener: NavigateEventListener | EventListener
+): listener is NavigateEventListener {
   return eventName === "navigate";
 }

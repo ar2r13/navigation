@@ -1,2 +1,2 @@
-export { AppHistory } from "./appHistory";
-export { useBrowserPolyfill } from "./polyfill";
+export { Navigation } from './navigation'
+import './polyfill'
