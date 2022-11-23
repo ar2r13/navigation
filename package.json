@@ -1,5 +1,5 @@
 {
-  "name": "navigation-polyfill",
+  "name": "navigation-api-polyfill",
   "version": "0.0.6",
   "description": "A polyfill for the Navigation API proposal. Not ready for production",
   "main": "dist/index.js",
